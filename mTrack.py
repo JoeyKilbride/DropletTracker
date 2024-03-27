@@ -16,5 +16,5 @@ def read_config(config_dir, file):
     return config
 
 def readBreath(d,f):
-    data = np.genfromtxt(os.path.join(d,f+".txt"), dtype =(float, float, float, float,int), skip_header=0, names=True, usecols = (0,1,2,3,4))
+    data = np.genfromtxt(os.path.join(d,f+".txt"), dtype =(float, float, float, float,int), skip_header=0, names=True, usecols = (0,1,2,3,5))
     return data

@@ -22,30 +22,37 @@ def main():
         print("dTrack_config.py - not found")
         print("config_dir must contain the configuration file: \"dTrack_config.py\".")
         return
-            
-    c = mt.read_config(directory, "dTrack_config")
 
+    c = mt.read_config(directory, "dTrack_config")
+    if os.path.exists(os.path.join(directory,c.filename+".txt")):
+        print(c.filename+" - found")
+    else:
+        print(c.filename+" - not found")
+        print("config_dir must contain the file set to the \"filename\" variable in \"dTrack_config.py\".")
+        return
     data = mt.readBreath(directory,c.filename)
 
     # find the number of slices (frames)
     # and set up variables to count total Radius, Volume and Particles per slice
+    print("Allocating memory")
     n = max(data['Slice'])                                      # total number of slices (frames)
     R = np.zeros([n])
     V = np.zeros([n])
     N = np.zeros([n], dtype=int)
     XY = np.zeros([n])
-    rwh = np.zeros([len(data['Width'])])
+    rwh = np.zeros([len(data['Major'])])
 
-    # loop over data and work out these values
-    for i, s in enumerate(data['Slice']):
-        rwh[i] = np.mean([data['Width'][i],data['Height'][i]])/2
-        N[s-1] = N[s-1] + 1             # add up all the droplets in each slice
-        V[s-1] = V[s-1] + rwh[i]**3.0      # add up the total "volume" in each slice
 
+    for i, s in enumerate(data['Slice']): # loop over all rows in text file
+        rwh[i] = np.min([data['Major'][i],data['Minor'][i]])/2
+    for i, s in enumerate(np.unique(data['Slice'])): # loop over all slices 
+        N[i] = len(data['Slice'][data['Slice']==s])
+        V[i] = np.sum(data['Slice'][data['Slice']==s])
+    
     totalDrops = max(N)
 
     ## create a proper 2D numpy array of coordinates
-    XY=np.transpose(np.asarray((data['BX'], data['BY'])))
+    XY=np.transpose(np.asarray((data['X'], data['Y'])))
 
     ## create an array of the slice/frame value
     S=np.transpose(np.asarray(data['Slice']))
@@ -55,33 +62,47 @@ def main():
     ## n rows, for each slice
     
     if c.centres == "droplets":
-        pointlist = [list(data['BX']),list(data['BY'])]
+        pointlist = np.transpose([list(data['X'][data['Slice']==1]),list(data['Y'][data['Slice']==1])])
     else:
         pointlist  = c.centres
-    vdrop = np.zeros([len(pointlist),n])
-    xtrack = np.zeros([len(pointlist),n])
-    ytrack = np.zeros([len(pointlist),n])
+    nreduced = len(range(c.start,c.end,c.steps))
+    rdrop = np.zeros([len(pointlist),nreduced])
+    xtrack = np.zeros([len(pointlist),nreduced])
+    ytrack = np.zeros([len(pointlist),nreduced])
     ## loop over drops to track their evolution
     for pdx, point in enumerate(pointlist):
-        print("Tacking point: ", pdx) # x,y coordinates to find the nearest droplet
+        print("Tracking point: ", pdx) # x,y coordinates to find the nearest droplet
         ppoint = point
-        for sl in range(1, max(data['Slice'])):
-            start= np.where(data['Slice']==sl)[0][0]                # find the start of the current slice
+        count=0
+        for sl in range(c.start, c.end ,c.steps):
+            start= np.where(data['Slice']==sl)[0][0]            # find the start of the current slice
             idx = mt.closest_node(point, XY[S==sl])              # coordinates of the closest droplet in slice
-            dxy = np.sqrt(( ppoint[0]-data['BX'][start+idx] )**2+ ( ppoint[1]-data['BY'][start+idx])**2)
-            inside = dxy<2*rwh[start+idx]
-            vdrop[pdx,sl-1]=rwh[start+idx]*inside
-            xtrack[pdx,sl-1]=data['BX'][start+idx]*inside
-            ytrack[pdx,sl-1]=data['BY'][start+idx]*inside
-            ppoint = [data['BX'][start+idx],data['BY'][start+idx]]
+            if sl==1:
+                rj = rwh[start+idx]
+                
+            dxy = np.sqrt(( point[0]-data['X'][start+idx] )**2+ ( point[1]-data['Y'][start+idx])**2)
+            #print("dxy = ",dxy, "rj = ", rj)
+            inside = dxy<rj
+            #print(inside)
+            #print("r = ", rwh[start+idx])
+            rdrop[pdx,count]  = rwh[start+idx]*inside
+            xtrack[pdx,count] = data['X'][start+idx]*inside
+            ytrack[pdx,count] = data['Y'][start+idx]*inside
+            ppoint = [data['X'][start+idx],data['Y'][start+idx]]
+            count = count+1
+        
             
     ## it would be good to define the distance accoridng to the previous centre, rather than the starting one
 
     Results={}
-    Results['radius'] = vdrop
+    Results['radius'] = rdrop
     Results['points'] = pointlist
     Results['xcentre'] = xtrack
-    Results['ycentre'] = xtrack
+    Results['ycentre'] = ytrack
+    Results['rwh'] = rwh
+    Results['data'] = data
+    Results['calibration'] = c.calibration
+    Results['FPS'] = c.FPS
 
     if c.export:
         with open(os.path.join(directory,"dTrack_"+c.prefix+".pickle"), 'wb') as handle:
@@ -100,16 +121,16 @@ def main():
     ax[0,0].set_ylabel('normalised value')
 
     ## make histograms for each slice
-    for sl in range(1, max(data['Slice']),100):
-        H = np.histogram(rwh[(data['Slice'] ==sl)], bins=17, range=(0,1700))
+    for sl in range(1, 600,100):
+        H = np.histogram(rwh[data['Slice']==sl], bins=15, range=(0,np.max(rwh)))
         ax[0,1].plot(H[1][0:-1],H[0], label=sl)
-    ax[0,1].set_xlabel('droplet area')
+    ax[0,1].set_xlabel('droplet radius')
     ax[0,1].set_ylabel('number of droplets')
     ax[0,1].legend()
 
     #ax[1,0].plot(data['Slice'],(data['Width']+data['Height'])/2,'.', alpha=0.5)
     for point in range(len(pointlist)):
-        y = vdrop[point]
+        y = rdrop[point]
         y = y[y>0]
         ax[1,0].plot(y, label='drop %i' % point)
 
