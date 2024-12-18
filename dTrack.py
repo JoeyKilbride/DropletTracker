@@ -35,7 +35,7 @@ def main():
     # find the number of slices (frames)
     # and set up variables to count total Radius, Volume and Particles per slice
     print("Allocating memory")
-    n = max(data['Slice'])                                      # total number of slices (frames)
+    n = int(max(data['Slice']))                                      # total number of slices (frames)
     R = np.zeros([n])
     V = np.zeros([n])
     N = np.zeros([n], dtype=int)
