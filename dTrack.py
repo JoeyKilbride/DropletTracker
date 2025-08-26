@@ -5,17 +5,17 @@ import numpy as np
 import os
 import mTrack as mt
 import pickle
+import sys
 
 
 # load the data
-# should be in five columns: count, Area, XM, YM, Slice
+# should include columns: count, Area, XM, YM, Slice
 # ignore the top header row
 ###############################
 
-def main():
-    directory = input("Please input a directory: ")
-
-    if os.path.exists(os.path.join(directory,"dTrack_config.py")):
+def main(config_dir):
+    
+    if os.path.exists(os.path.join(config_dir,"dTrack_config.py")):
         print("dTrack_config.py - found")
     else:
         print("config_dir may not exist or")
@@ -23,14 +23,14 @@ def main():
         print("config_dir must contain the configuration file: \"dTrack_config.py\".")
         return
 
-    c = mt.read_config(directory, "dTrack_config")
-    if os.path.exists(os.path.join(directory,c.filename+".txt")):
+    c = mt.read_config(config_dir, "dTrack_config")
+    if os.path.exists(os.path.join(config_dir,c.filename+".txt")):
         print(c.filename+" - found")
     else:
         print(c.filename+" - not found")
         print("config_dir must contain the file set to the \"filename\" variable in \"dTrack_config.py\".")
         return
-    data = mt.readBreath(directory,c.filename)
+    data = mt.readBreath(config_dir,c.filename)
 
     # find the number of slices (frames)
     # and set up variables to count total Radius, Volume and Particles per slice
@@ -70,28 +70,33 @@ def main():
     xtrack = np.zeros([len(pointlist),nreduced])
     ytrack = np.zeros([len(pointlist),nreduced])
     ## loop over drops to track their evolution
-    for pdx, point in enumerate(pointlist):
-        print("Tracking point: ", pdx) # x,y coordinates to find the nearest droplet
-        ppoint = point
-        count=0
-        for sl in range(c.start, c.end ,c.steps):
-            start= np.where(data['Slice']==sl)[0][0]            # find the start of the current slice
-            idx = mt.closest_node(point, XY[S==sl])              # coordinates of the closest droplet in slice
-            if sl==1:
-                rj = rwh[start+idx]
-                
-            dxy = np.sqrt(( point[0]-data['X'][start+idx] )**2+ ( point[1]-data['Y'][start+idx])**2)
-            #print("dxy = ",dxy, "rj = ", rj)
-            inside = dxy<rj
-            #print(inside)
-            #print("r = ", rwh[start+idx])
-            rdrop[pdx,count]  = rwh[start+idx]*inside
-            xtrack[pdx,count] = data['X'][start+idx]*inside
-            ytrack[pdx,count] = data['Y'][start+idx]*inside
-            ppoint = [data['X'][start+idx],data['Y'][start+idx]]
-            count = count+1
-        
-            
+    npoints = len(pointlist)
+    try:
+        for pdx, point in enumerate(pointlist):
+            print("Tracking point: ", pdx,"/",str(npoints)) # x,y coordinates to find the nearest droplet
+            ppoint = point
+            count=0
+            for sl in range(c.start, c.end ,c.steps):
+                start= np.where(data['Slice']==sl)[0][0]            # find the start of the current slice
+                idx = mt.closest_node(point, XY[S==sl])              # coordinates of the closest droplet in slice
+                if sl==1:
+                    rj = rwh[start+idx]
+                    
+                dxy = np.sqrt(( point[0]-data['X'][start+idx] )**2+ ( point[1]-data['Y'][start+idx])**2)
+                #print("dxy = ",dxy, "rj = ", rj)
+                inside = dxy<rj
+                #print(inside)
+                #print("r = ", rwh[start+idx])
+                rdrop[pdx,count]  = rwh[start+idx]*inside
+                xtrack[pdx,count] = data['X'][start+idx]*inside
+                ytrack[pdx,count] = data['Y'][start+idx]*inside
+                ppoint = [data['X'][start+idx],data['Y'][start+idx]]
+                count = count+1
+    except:
+        print("Loop failed at point "+str(pdx)+" frame "+str(sl))
+        print("check this frame exists in file.")
+        return
+
     ## it would be good to define the distance accoridng to the previous centre, rather than the starting one
 
     Results={}
@@ -105,7 +110,7 @@ def main():
     Results['FPS'] = c.FPS
 
     if c.export:
-        with open(os.path.join(directory,"dTrack_"+c.prefix+".pickle"), 'wb') as handle:
+        with open(os.path.join(config_dir,"dTrack_"+c.prefix+".pickle"), 'wb') as handle:
             pickle.dump(Results, handle, protocol=pickle.HIGHEST_PROTOCOL)
         print("exported")
 
@@ -151,4 +156,14 @@ def main():
     ## from https://codereview.stackexchange.com/questions/28207/finding-the-closest-point-to-a-list-of-points
     return
 
-main()
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python your_script.py <directory_path>")
+        sys.exit(1)
+    
+    config_dir = sys.argv[1]
+    if not os.path.isdir(config_dir):
+        print("Error: The provided path is not a directory.")
+        sys.exit(1)
+    
+main(config_dir)
